@@ -1,0 +1,49 @@
+name: Test cask
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tap this checkout
+        run: |
+          set -euo pipefail
+          brew tap undermove/tap
+          tap_dir=$(brew --repo undermove/tap)
+          git -C "$tap_dir" fetch -q "$GITHUB_WORKSPACE" HEAD
+          git -C "$tap_dir" checkout -q FETCH_HEAD
+          brew trust --cask undermove/tap/meridian 2>/dev/null || true
+
+      - name: Style
+        run: brew style undermove/tap
+
+      - name: Audit
+        run: brew audit --cask --strict --online undermove/tap/meridian
+
+      - name: Install, check signature, uninstall
+        run: |
+          set -euo pipefail
+          appdir="$RUNNER_TEMP/apps"
+          mkdir -p "$appdir"
+          brew install --cask --appdir="$appdir" undermove/tap/meridian
+          codesign --verify --deep --strict --verbose=2 "$appdir/Meridian.app"
+          spctl -a -vv "$appdir/Meridian.app"
+          brew uninstall --cask meridian
+          test ! -e "$appdir/Meridian.app"
