@@ -1,0 +1,65 @@
+name: Bump cask
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: bump-cask
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Update Casks/meridian.rb to the latest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # releases/latest never returns drafts or prereleases.
+          tag=$(gh api repos/Undermove/meridian-browser/releases/latest --jq .tag_name)
+          latest=${tag#v}
+          if ! [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected tag: $tag" >&2
+            exit 1
+          fi
+          current=$(sed -nE 's/^  version "([^"]+)"$/\1/p' Casks/meridian.rb)
+          echo "current=$current latest=$latest"
+          newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n1)
+          if [ "$latest" = "$current" ] || [ "$newest" != "$latest" ]; then
+            echo "Cask is up to date."
+            exit 0
+          fi
+
+          dmg="Meridian-${latest}-mac-arm64.dmg"
+          base="https://github.com/Undermove/meridian-browser/releases/download/v${latest}"
+          work=$(mktemp -d)
+          curl -fsSL --retry 3 -o "$work/$dmg" "$base/$dmg"
+          sha=$(sha256sum "$work/$dmg" | cut -d' ' -f1)
+
+          # Cross-check against the release's SHA256SUMS.txt when it lists the dmg.
+          if curl -fsSL --retry 3 -o "$work/SHA256SUMS.txt" "$base/SHA256SUMS.txt"; then
+            listed=$(awk -v f="$dmg" '$2 == f || $2 == "*"f {print $1}' "$work/SHA256SUMS.txt")
+            if [ -n "$listed" ] && [ "$listed" != "$sha" ]; then
+              echo "sha256 mismatch: downloaded $sha, SHA256SUMS.txt says $listed" >&2
+              exit 1
+            fi
+          fi
+
+          sed -i -E "s/^  version \"[^\"]+\"$/  version \"${latest}\"/" Casks/meridian.rb
+          sed -i -E "s/^  sha256 \"[0-9a-f]+\"$/  sha256 \"${sha}\"/" Casks/meridian.rb
+          git diff --stat
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/meridian.rb
+          git commit -m "meridian ${latest}"
+          git push origin HEAD:main
