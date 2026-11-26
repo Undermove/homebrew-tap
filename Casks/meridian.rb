@@ -1,6 +1,6 @@
 cask "meridian" do
-  version "1.4.0"
-  sha256 "196c7413fd61bfbe73b8266f5ec9a90b739b308683000eeb335ec5013a129d94"
+  version "1.5.0"
+  sha256 "eb80fb3603f9e0df484a5f811532f7fd8be6bebc94b831d1b62799cf2343b062"
 
   url "https://github.com/Undermove/meridian-browser/releases/download/v#{version}/Meridian-#{version}-mac-arm64.dmg"
   name "Meridian"
